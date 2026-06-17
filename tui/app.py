@@ -188,8 +188,7 @@ class BotTUI(App):
                         title = title.split(" — ")[0]
                     if len(title) > 12:
                         title = title[:12]
-                    key = str(i + 1)
-                    yield Button(f"{key}.{title}", id=f"sect-{i}")
+                    yield Button(title, id=f"sect-{i}")
                 yield Button("h.History", id="sect-hist")
                 yield Button("s.Save", id="sect-save")
                 yield Button("r.Restart", id="sect-restart")

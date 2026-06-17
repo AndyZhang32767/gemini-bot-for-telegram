@@ -131,7 +131,7 @@ def parse_config(filepath: str) -> list[Section]:
         if section.variables:
             base_vars.extend(section.variables)
     if base_vars:
-        merged_sections.append(Section(title="Config", variables=base_vars))
+        merged_sections.append(Section(title="c.Config", variables=base_vars))
     return merged_sections
 
 
@@ -159,8 +159,8 @@ def _try_parse_variable(lines: list[str], start: int) -> Var | None:
     name = m.group(2)
     value = m.group(3).rstrip()
 
-    # 情况 A：多行字符串（"""...开头但本行未闭合）
-    if value.strip().startswith('"""') and not value.strip().endswith('"""'):
+    # 情况 A：多行字符串（""" 独占一行，或 """...开头但本行未闭合）
+    if value.strip().startswith('"""') and (value.strip() == '"""' or not value.strip().endswith('"""')):
         is_multiline = True
         full_value = value + "\n"
         end = start + 1

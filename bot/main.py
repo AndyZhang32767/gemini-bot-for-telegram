@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 #=======================================================================================
 
 async def daily_morning_push(context):
+    from tui.feature_flags import flag
+    if not flag("morning_push"):
+        logger.info("早间推送已关闭")
+        return
+
     logger.info("执行早间课表推送任务...")
     schedule_text = fetch_school_schedule()
 

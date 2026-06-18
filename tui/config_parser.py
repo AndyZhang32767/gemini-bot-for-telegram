@@ -48,11 +48,6 @@ class Section:
     variables: list[Var] = field(default_factory=list)
 
 
-#=============================================================
-#.       分节分隔线判断 — 匹配 #====...==== 格式的行
-#.       config.py 中每个 Section 以 #====...==== 行分隔，
-#.       "=" 长度随注释文本变化，所以用模式匹配而非精确字符串比较。
-#=============================================================
 def _is_section_sep(line: str) -> bool:
     s = line.strip()
     return s.startswith("#====") and s.endswith("====") and s.count("=") > len(s) * 0.6

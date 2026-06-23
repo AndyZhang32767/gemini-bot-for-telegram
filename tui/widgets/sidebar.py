@@ -28,7 +28,6 @@ def _build_items():
     items = []
     for t in _scan():
         items.extend(t.switches)
-    # 早间推送依赖 schooldays 插件，仅在该插件存在时显示
     sys.modules.pop("tools.schooldays", None)
     try:
         import tools.schooldays  # noqa: F401
@@ -56,6 +55,14 @@ class Sidebar(VerticalScroll):
         height: 3;
         align: left middle;
         padding: 0 1;
+        opacity: 0%;
+        offset-x: -4;
+    }
+    .toggle-row.-visible {
+        opacity: 100%;
+        offset-x: 0;
+        transition: opacity 250ms linear,
+                    offset-x 250ms in_out_cubic;
     }
     .toggle-label {
         width: 1fr;
@@ -67,16 +74,45 @@ class Sidebar(VerticalScroll):
         self._flags = load_flags()
 
     #=========================================================
+    #.       内部：构建 title + rows，可选触发逐行动画
+    #=========================================================
+    def _make_widgets(self) -> list:
+        widgets: list = [Static("Skills & Plans", id="sidebar-title")]
+        for key, label in _build_items():
+            on = self._flags.get(key, True)
+            row = Horizontal(
+                Static(f" {label}", classes="toggle-label"),
+                Switch(value=on, id=f"sw-{key}", animate=False),
+                classes="toggle-row",
+            )
+            widgets.append(row)
+        return widgets
+
+    def _animate_rows(self, widgets: list, delay: float = 0.07, base_delay: float = 0.0) -> None:
+        """每 100ms 并发触发两个 row 的 -visible 动画。"""
+        rows = [w for w in widgets if isinstance(w, Horizontal)]
+        pair_gap = 0.1  # 每对间隔 100ms
+        for i, row in enumerate(rows):
+            pair_index = i // 2
+            t = base_delay + pair_index * pair_gap
+            self.set_timer(t, lambda row=row: row.add_class("-visible"))
+
+    #=========================================================
     #.       构建侧边栏：标题 + 逐行 Switch 控件
     #=========================================================
     def compose(self) -> ComposeResult:
-        yield Static("Skills & Plans", id="sidebar-title")
-        for key, label in _build_items():
-            on = self._flags.get(key, True)
-            with Horizontal(classes="toggle-row"):
-                yield Static(f" {label}", classes="toggle-label")
-                yield Switch(value=on, id=f"sw-{key}", animate=False)
+        widgets = self._make_widgets()
+        self._rows = widgets          # 存起来供 on_mount 用
+        for w in widgets:
+            yield w
 
+    def on_mount(self) -> None:
+        # 不再自动播放动画，等 loading/setup 完成后由 app._after_setup 触发
+        pass
+
+    def animate(self) -> None:
+        """公开方法：由外部（app._after_setup）调用来播放逐行动画。"""
+        self._animate_rows(self._rows, base_delay=0.1)
     #=========================================================
     #.       重建侧边栏（重新扫描 tools/ → 更新开关列表）
     #=========================================================
@@ -91,17 +127,9 @@ class Sidebar(VerticalScroll):
         self._flags = load_flags()
         await self.remove_children()
 
-        # 构建所有子控件（不能调 compose()，因为 mount_all 不支持 with 上下文管理器）
-        widgets: list = [Static("Skills & Plans", id="sidebar-title")]
-        for key, label in _build_items():
-            on = self._flags.get(key, True)
-            row = Horizontal(
-                Static(f" {label}", classes="toggle-label"),
-                Switch(value=on, id=f"sw-{key}", animate=False),
-                classes="toggle-row",
-            )
-            widgets.append(row)
+        widgets = self._make_widgets()
         await self.mount_all(widgets)
+        self._animate_rows(widgets, base_delay=1)
 
     #=========================================================
     #.       Switch 切换时立即写入 feature_flags.json

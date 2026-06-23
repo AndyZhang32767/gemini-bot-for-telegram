@@ -3,6 +3,9 @@
 #.       ToolsModal (L2)：列出所有 tool 模块
 #.       ToolSettingsModal (L3)：编辑单个 tool 的常函数/配置常量
 #.       通过 #==CONFIG== / #==END CONFIG== 标记识别可编辑区域。
+#.
+#.       动画方案与 config_modal 一致：
+#.         空壳 fade-in → 替换为真实 dialog → title/body 依次淡入。
 #=======================================================================================
 
 import os
@@ -85,28 +88,73 @@ class ToolSettingsModal(ModalScreen):
     ToolSettingsModal {
         align: center middle;
     }
+
+    /* ================================================================
+    .   Fade 空壳
+    .=============================================================== */
+
+    #tool-settings-shell {
+        width: 55%;
+        height: 100%;
+        border: thick $warning;
+        background: $surface;
+        display: none;
+        opacity: 0%;
+    }
+
+    #tool-settings-shell.-visible {
+        display: block;
+    }
+
+    #tool-settings-shell.-fade-in {
+        opacity: 100%;
+        transition: opacity 300ms in_out_cubic;
+    }
+
+    /* ================================================================
+    .   真实 dialog
+    .=============================================================== */
+
     #tool-settings-dialog {
         width: 55%;
-        height: auto;
+        height: 100%;
         border: thick $warning;
         background: $surface;
         padding: 1 2;
+        display: none;
     }
+
+    #tool-settings-dialog.-visible {
+        display: block;
+    }
+
     #tool-settings-title {
         text-align: center;
         padding: 1;
         background: $warning;
         color: $text;
         text-style: bold;
+        opacity: 0%;
+        transition: opacity 250ms in_out_cubic;
     }
+
     #tool-settings-body {
         margin: 1 0;
+        opacity: 0%;
+        transition: opacity 250ms in_out_cubic;
     }
+
     #tool-settings-buttons {
         dock: bottom;
         height: 3;
         align: right middle;
     }
+
+    #tool-settings-dialog.-fade-children #tool-settings-title,
+    #tool-settings-dialog.-fade-children #tool-settings-body {
+        opacity: 100%;
+    }
+
     .ts-label {
         margin-top: 1;
         text-style: bold;
@@ -122,10 +170,14 @@ class ToolSettingsModal(ModalScreen):
         self._module_name = module_name
         self._filepath = filepath
         self._config = _parse_tool_config(module_name)
-        self._info = _TOOL_MAP.get(module_name)  # ToolInfo
+        self._info = _TOOL_MAP.get(module_name)
         self._inputs: dict[str, Input] = {}
 
     def compose(self) -> ComposeResult:
+        # -- Fade 空壳
+        yield VerticalScroll(id="tool-settings-shell")
+
+        # -- 真实 dialog
         if self._info and self._info.title:
             title = self._info.title
         else:
@@ -145,7 +197,7 @@ class ToolSettingsModal(ModalScreen):
             else:
                 with VerticalScroll(id="tool-settings-body"):
                     for name, info in self._config.items():
-                        label_text = info.get("label", name)  # 中文标签
+                        label_text = info.get("label", name)
                         yield Label(label_text, classes="ts-label")
                         inp = Input(value=info.get("value", ""), id=f"ts-{name}", classes="ts-input")
                         self._inputs[name] = inp
@@ -154,6 +206,27 @@ class ToolSettingsModal(ModalScreen):
                 yield Button("Back", id="ts-back")
                 if self._config:
                     yield Button(" 💾 Save & Back ", id="ts-save", variant="success")
+
+    #===================================================================================
+    #.       挂载 — 壳淡入 → 替换为真实 dialog
+    #===================================================================================
+
+    def on_mount(self) -> None:
+        shell = self.query_one("#tool-settings-shell")
+        shell.add_class("-visible")
+        self.set_timer(0.03, lambda: shell.add_class("-fade-in"))
+        self.set_timer(0.35, self._swap_to_real)
+
+    def _swap_to_real(self) -> None:
+        """壳淡入完成 → 隐藏壳，显示真实 dialog。"""
+        self.query_one("#tool-settings-shell").display = False
+        dialog = self.query_one("#tool-settings-dialog")
+        dialog.add_class("-visible")
+        self.set_timer(0.03, lambda: dialog.add_class("-fade-children"))
+
+    #===================================================================================
+    #.       按钮事件
+    #===================================================================================
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "ts-back":
@@ -182,35 +255,81 @@ class ToolsModal(ModalScreen):
     ToolsModal {
         align: center middle;
     }
+
+    /* ================================================================
+    .   Fade 空壳
+    .=============================================================== */
+
+    #tools-shell {
+        width: 45%;
+        height: 100%;
+        border: thick $warning;
+        background: $surface;
+        display: none;
+        opacity: 0%;
+    }
+
+    #tools-shell.-visible {
+        display: block;
+    }
+
+    #tools-shell.-fade-in {
+        opacity: 100%;
+        transition: opacity 300ms in_out_cubic;
+    }
+
+    /* ================================================================
+    .   真实 dialog
+    .=============================================================== */
+
     #tools-dialog {
         width: 45%;
-        height: auto;
+        height: 100%;
         border: thick $warning;
         background: $surface;
         padding: 1 2;
+        display: none;
     }
+
+    #tools-dialog.-visible {
+        display: block;
+    }
+
     #tools-title {
         text-align: center;
         padding: 1;
         background: $warning;
         color: $text;
         text-style: bold;
+        opacity: 0%;
+        transition: opacity 250ms in_out_cubic;
     }
+
     #tools-body {
         margin: 1 0;
     }
+
     #tools-body Button {
         width: 100%;
         margin-bottom: 1;
     }
+
     #tools-close {
         dock: bottom;
         height: 3;
         align: right middle;
     }
+
+    #tools-dialog.-fade-children #tools-title {
+        opacity: 100%;
+    }
     """
 
     def compose(self) -> ComposeResult:
+        # -- Fade 空壳
+        yield VerticalScroll(id="tools-shell")
+
+        # -- 真实 dialog
         with VerticalScroll(id="tools-dialog"):
             yield Static("🔧 Tools 参数管理", id="tools-title")
             with VerticalScroll(id="tools-body"):
@@ -220,6 +339,27 @@ class ToolsModal(ModalScreen):
                     yield Button(label, id=f"tool-{t.name}", variant="primary" if has else "default")
             with Horizontal(id="tools-close"):
                 yield Button("Cancel", id="tools-cancel")
+
+    #===================================================================================
+    #.       挂载 — 壳淡入 → 替换为真实 dialog
+    #===================================================================================
+
+    def on_mount(self) -> None:
+        shell = self.query_one("#tools-shell")
+        shell.add_class("-visible")
+        self.set_timer(0.03, lambda: shell.add_class("-fade-in"))
+        self.set_timer(0.35, self._swap_to_real)
+
+    def _swap_to_real(self) -> None:
+        """壳淡入完成 → 隐藏壳，显示真实 dialog。"""
+        self.query_one("#tools-shell").display = False
+        dialog = self.query_one("#tools-dialog")
+        dialog.add_class("-visible")
+        self.set_timer(0.03, lambda: dialog.add_class("-fade-children"))
+
+    #===================================================================================
+    #.       按钮事件
+    #===================================================================================
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""

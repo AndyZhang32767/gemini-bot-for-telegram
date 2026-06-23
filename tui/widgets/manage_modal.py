@@ -5,6 +5,8 @@
 #.       右侧从 GitHub API 拉取可用工具列表，选中后可从 raw.githubusercontent.com
 #.       下载安装。
 #.       Esc 关闭。
+#.
+#.       动画方案：空壳 fade-in → 替换为真实 dialog → title/body 淡入。
 #=======================================================================================
 
 import os
@@ -29,7 +31,7 @@ def _installed_module_names() -> set[str]:
     return {t.name for t in scan_tools()}
 
 
-# GitHub raw 基础 URL（请替换为你的仓库）
+# GitHub raw 基础 URL
 RAW_BASE = "https://raw.githubusercontent.com/AndyZhang32767/assistant/main/tools"
 
 
@@ -94,26 +96,71 @@ class ManageModal(ModalScreen[str | None]):
     ManageModal {
         align: center middle;
     }
+
+    /* ================================================================
+    .   Fade 空壳 — 仅用于淡入动画
+    .=============================================================== */
+
+    #manage-shell {
+        width: 85;
+        height: 80;
+        max-height: 75%;
+        border: thick $primary;
+        background: $surface;
+        display: none;
+        opacity: 0%;
+    }
+
+    #manage-shell.-visible {
+        display: block;
+    }
+
+    #manage-shell.-fade-in {
+        opacity: 100%;
+        transition: opacity 300ms in_out_cubic;
+    }
+
+    /* ================================================================
+    .   真实 dialog — 无渐变，fade 完成后替换壳
+    .=============================================================== */
+
     #manage-dialog {
         width: 85;
-        height: auto;
+        height: 80;
         max-height: 75%;
         border: thick $primary;
         background: $surface;
         padding: 1 2;
+        display: none;
         overflow: hidden hidden;
     }
+
+    #manage-dialog.-visible {
+        display: block;
+    }
+
     #manage-title {
         text-align: center;
         padding: 1;
         background: $primary;
         color: $text;
         text-style: bold;
+        opacity: 0%;
+        transition: opacity 250ms in_out_cubic;
     }
+
     #manage-main {
         height: 1fr;
         margin: 1 0;
+        opacity: 0%;
+        transition: opacity 250ms in_out_cubic;
     }
+
+    #manage-dialog.-fade-children #manage-title,
+    #manage-dialog.-fade-children #manage-main {
+        opacity: 100%;
+    }
+
     #manage-left {
         width: 1fr;
         height: 100%;
@@ -128,6 +175,9 @@ class ManageModal(ModalScreen[str | None]):
     #manage-left-title, #manage-right-title {
         text-style: bold underline;
         padding-bottom: 1;
+    }
+    #manage-installed-scroll, #manage-remote-scroll {
+        height: 1fr;
     }
     #manage-installed-list, #manage-remote-list {
         height: 1fr;
@@ -146,7 +196,15 @@ class ManageModal(ModalScreen[str | None]):
         self._selected_index: int | None = None
         self._remote_files: list[dict] = []  # [{name, download_url, installed}, ...]
 
+    #===================================================================================
+    #.       界面构建 — 壳 + 真实 dialog
+    #===================================================================================
+
     def compose(self) -> ComposeResult:
+        # -- Fade 空壳
+        yield VerticalScroll(id="manage-shell")
+
+        # -- 真实 dialog（初始隐藏）
         with Vertical(id="manage-dialog"):
             yield Static("Manage Tools（工具管理）", id="manage-title")
             with Horizontal(id="manage-main"):
@@ -165,6 +223,28 @@ class ManageModal(ModalScreen[str | None]):
                 yield Button(" Download ", id="btn-remote-dl")
                 yield Button(" Refresh ", id="btn-avail-refresh")
                 yield Button(" Cancel ", id="btn-modal-cancel")
+
+    #===================================================================================
+    #.       挂载 — 壳淡入 → 替换为真实 dialog
+    #===================================================================================
+
+    def on_mount(self) -> None:
+        # 后台加载数据（不等待动画）
+        self._populate_installed_list()
+        asyncio.create_task(self._fetch_remote())
+
+        # 壳淡入动画
+        shell = self.query_one("#manage-shell")
+        shell.add_class("-visible")
+        self.set_timer(0.03, lambda: shell.add_class("-fade-in"))
+        self.set_timer(0.35, self._swap_to_real)
+
+    def _swap_to_real(self) -> None:
+        """壳淡入完成 → 隐藏壳，显示真实 dialog，子控件淡入。"""
+        self.query_one("#manage-shell").display = False
+        dialog = self.query_one("#manage-dialog")
+        dialog.add_class("-visible")
+        self.set_timer(0.03, lambda: dialog.add_class("-fade-children"))
 
     #=============================================================
     #.       填充左侧 ListView（已安装）
@@ -296,10 +376,6 @@ class ManageModal(ModalScreen[str | None]):
     #=============================================================
     #.       从 GitHub API 拉取文件列表，download_url 用 raw 地址
     #=============================================================
-    def on_mount(self) -> None:
-        self._populate_installed_list()
-        asyncio.create_task(self._fetch_remote())
-
     async def _fetch_remote(self) -> None:
         try:
             await self._fetch_remote_api()

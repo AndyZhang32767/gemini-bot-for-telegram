@@ -12,10 +12,10 @@
 - 群组备忘录
 - BT 下载集成（qBittorrent，支持 magnet 链接和 .torrent 文件）
 - Office 文档转 PDF（LibreOffice）
+- 首次设置向导（引导配置 Token、Key 等）
 - 新用户授权弹窗（Premium / Normal / 拒绝）
 - TUI 控制台：配置编辑、工具管理、功能开关、实时日志
-- 插件系统：`tools/` 目录自动发现与注册
-- 远程工具下载（从 GitHub 仓库拉取安装新工具）
+- 插件系统：`tools/` 目录自动发现与注册，支持从 GitHub 远程下载安装
 
 ## 架构
 
@@ -43,6 +43,8 @@ assistant/
 │   ├── config_parser.py  # config.py 解析与写回
 │   ├── feature_flags.py  # 功能开关管理
 │   └── widgets/          # UI 组件
+│       ├── setup_screen.py   # 首次设置向导
+│       ├── loading_screen.py # 启动加载画面
 │       ├── sidebar.py        # 侧边栏（状态/开关）
 │       ├── config_modal.py   # 配置编辑弹窗
 │       ├── tools_modal.py    # Tools 参数编辑
@@ -70,12 +72,12 @@ assistant/
 # 1. 安装依赖
 pip install -r requirements.txt
 
-# 2. 编辑 core/config.py，填入你的 TELEGRAM_TOKEN、GEMINI_API_KEY 等配置
-
-# 3. 启动
-python3 run.py          # 命令行模式（阻塞 polling）
-python3 tui_run.py      # TUI 控制台模式（推荐）
+# 2. 启动（首次运行自动进入设置向导）
+python3 tui_run.py        # TUI 控制台模式（推荐）
+python3 run.py            # 命令行模式
 ```
+
+首次启动时若 `core/config.py` 中 `SETUP = True`（默认），会自动进入全屏设置向导，引导配置 Token、Key、管理员 ID 等信息。
 
 ## 配置
 
@@ -92,13 +94,17 @@ python3 tui_run.py      # TUI 控制台模式（推荐）
 | `BOT_NAME` | 群聊中唤起 Bot 的关键词 | `助手` |
 | `PRIVATE_INSTRUCTION` | 私聊 System Prompt | 定义角色和行为 |
 | `PUBLIC_INSTRUCTION` | 群聊 System Prompt | 定义群聊角色和行为 |
-| `CUSTOM_SEARCH_API` | Google Custom Search API（备用） | 可选 |
+| `SETUP` | 首次启动是否进入设置向导 | `True` / `False` |
 
-Tools 参数（如 qBittorrent 连接信息、课表推送时间）编辑对应 `tools/*.py` 中的 `#==CONFIG==` 段，或通过 TUI 的 Tools 菜单编辑。
+Tools 参数（如 qBittorrent 连接信息、课表推送时间）编辑对应 `tools/*.py` 中的 `#==CONFIG==` 段，或通过 TUI 按 `t` 进入 Tools 菜单编辑。
 
 ## TUI 控制台
 
-TUI 模式基于 [Textual](https://textual.textualize.io/) 框架，提供实时配置管理界面。
+TUI 模式基于 [Textual](https://textual.textualize.io/) 框架。
+
+### 首次设置向导
+
+当 `SETUP = True` 时，启动后自动进入设置向导，引导依次设置：Telegram Token → Gemini API Key → 管理员 ID → 代理地址 → Bot 名称 → 私聊/群聊 Instruction。完成后自动将 `SETUP` 写为 `False` 并进入主界面。
 
 ### 界面布局
 
@@ -111,7 +117,7 @@ TUI 模式基于 [Textual](https://textual.textualize.io/) 框架，提供实时
 | 键 | 功能 |
 |---|------|
 | `c` | 打开配置编辑（config.py 变量） |
-| `t` | 打开 Tools 参数管理（各工具的 `#==CONFIG==` 段） |
+| `t` | 打开 Tools 参数管理 |
 | `m` | 工具管理（远程下载 / 删除已安装工具） |
 | `h` | 查看会话历史 |
 | `s` | 查看课表 |
@@ -132,8 +138,6 @@ TUI 模式基于 [Textual](https://textual.textualize.io/) 框架，提供实时
 
 ## 命令
 
-Bot 在 Telegram 中支持以下命令：
-
 | 命令 | 说明 | 权限 |
 |------|------|:--:|
 | `/start` | 发送欢迎语 | 所有用户 |
@@ -142,16 +146,14 @@ Bot 在 Telegram 中支持以下命令：
 
 ## 用户授权
 
-新用户首次发消息时，会在 TUI 控制台弹出授权窗口。管理员可选择：
-- **Premium（私聊模式）**：开放全部工具，适合私密对话
-- **Normal（群聊模式）**：受限工具集，适合群组场景
-- **拒绝**：加入黑名单，Bot 不再响应
+新用户首次发消息时，TUI 弹出授权窗口。管理员可选择：
+- **Premium**：开放全部工具，适合私密对话
+- **Normal**：受限工具集，适合群组场景
+- **拒绝**：加入黑名单
 
-授权信息持久化到 `data/sessions_data.json`，黑名单单独存储。
+授权信息持久化到 `data/sessions_data.json`。
 
 ## 定时任务
-
-通过 `utils/scheduler.py` 注册定时任务，精度 10 秒。当前内置任务：
 
 | 任务 | 说明 |
 |------|------|
@@ -161,17 +163,11 @@ Bot 在 Telegram 中支持以下命令：
 
 ## 工具管理
 
-TUI 中按 `m` 打开工具管理界面，可：
-- **左侧**：查看已安装工具，Delete 键删除
-- **右侧**：从 GitHub 仓库拉取可用工具列表，Enter 下载安装
-
-工具文件存储在 `tools/` 目录下，删除后需重启生效。
+TUI 中按 `m` 打开，可远程下载安装新工具或删除已安装工具。
 
 ## 插件系统
 
-`tools/` 目录下的 `.py` 文件会被自动发现和注册。每个文件通过 `#==TOOL==` 头部声明元信息，可选 `#==CONFIG==` 段声明用户可配置参数。
-
-详细文档见 [tools.md](tools.md)。
+`tools/` 目录下的 `.py` 文件自动发现和注册。每个文件通过 `#==TOOL==` 头部声明元信息，可选 `#==CONFIG==` 段声明用户可配置参数。详见 [tools.md](tools.md)。
 
 ## 系统依赖（可选）
 
@@ -180,6 +176,4 @@ TUI 中按 `m` 打开工具管理界面，可：
 | LibreOffice | Office 文档 → PDF 转换 | `brew install libreoffice` |
 | qBittorrent | BT 下载 | 需开启 Web UI（设置 → Web UI） |
 
-不支持的操作系统特性：
-- `tools/reminder.py` — 仅支持 macOS（依赖 AppleScript）
-- `utils/power_monitor.py` — 仅支持 macOS（依赖 pmset）
+> 注意：`tools/reminder.py` 和 `utils/power_monitor.py` 仅支持 macOS。

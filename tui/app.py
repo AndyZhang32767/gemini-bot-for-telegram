@@ -24,8 +24,8 @@ from textual.containers import Vertical, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static, TextArea
 
-# -- 从 core/config.py 获取版本号显示在标题栏
-from core.config import VERSION
+# -- 从 core/config.py 获取版本号和 SETUP 标志
+from core.config import VERSION, SETUP
 # -- 从 core/logging_setup.py 获取日志初始化函数
 from core.logging_setup import setup_logging
 # -- 从 tui/config_parser.py 获取配置解析和写回函数
@@ -35,6 +35,8 @@ from tui.widgets.log_panel import LogPanel
 from tui.widgets.config_modal import ConfigModal
 from tui.widgets.history_modal import HistoryList
 from tui.widgets.sidebar import Sidebar
+from tui.widgets.setup_screen import SetupScreen
+from tui.widgets.loading_screen import LoadingScreen
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,14 @@ class BotTUI(App):
         color: $text;
         text-style: bold;
         content-align: center middle;
+        opacity: 0%;
+        offset-y: -1;
+    }
+    #title-bar.-visible {
+        opacity: 100%;
+        offset-y: 0;
+        transition: opacity 250ms linear,
+                    offset-y 500ms in_out_cubic;
     }
     #main-area {
         height: 1fr;
@@ -123,10 +133,32 @@ class BotTUI(App):
         width: 35;
         border-left: solid $primary-darken-2;
     }
+    /* footer — 纯文字壳，fade-in 后替换为真按钮 */
+    #bottom-shell {
+        height: 1;
+        background: $panel;
+        color: $text-muted;
+        content-align: left middle;
+        padding: 0 1;
+        display: none;
+        opacity: 0%;
+    }
+    #bottom-shell.-visible {
+        display: block;
+    }
+    #bottom-shell.-fade-in {
+        opacity: 100%;
+        transition: opacity 250ms in_out_cubic;
+    }
+    /* footer — 真实按钮，壳 fade 完成后直接替换（无渐变） */
     #bottom-bar {
         height: 1;
         background: $panel;
         align: left middle;
+        display: none;
+    }
+    #bottom-bar.-visible {
+        display: block;
     }
     #bottom-bar Button {
         padding: 0 1;
@@ -179,17 +211,12 @@ class BotTUI(App):
             with Horizontal(id="main-area"):
                 yield LogPanel(id="log-panel")          # 左侧日志面板
                 yield Sidebar(id="sidebar")             # 右侧功能开关
+            # -- footer 纯文字壳（先渲染）
+            yield Static("c.Config     | t.Tools        | s.Schedule       | h.History       | m.Manage       | p.Status        | r.Restart       | Ctrl+S Save       | q.Quit",
+                         id="bottom-shell")
+            # -- footer 真按钮（初始隐藏，fade 后替换壳）
             with Horizontal(id="bottom-bar"):
-                # 动态生成底部按钮：每个配置区块一个按钮 + 功能按钮
-                for i, section in enumerate(self._sections):
-                    title = section.title
-                    if title.startswith("."):
-                        title = title.lstrip(". ")
-                    title = title.replace("core/config.py — ", "")
-                    if " — " in title:
-                        title = title.split(" — ")[0]
-                    if len(title) > 12:
-                        title = title[:12]
+                for i in range(len(self._sections)):
                     yield Button("c.Config", id=f"sect-{i}")
                 yield Button("t.Tools", id="sect-tools")
                 yield Button("s.Schedule", id="sect-schedule")
@@ -208,16 +235,40 @@ class BotTUI(App):
     #===================================================================================
 
     def on_mount(self) -> None:
-        setup_logging()
+        if SETUP:
+            self.push_screen(SetupScreen(CONFIG_PATH), callback=self._after_setup)
+        else:
+            # 正常模式：先显示 loading，后台启动 bot，收到信号后关闭 loading
+            loading = LoadingScreen()
+            self.push_screen(loading, callback=self._after_loading)
+            setup_logging()
+            self._setup_auth()
+            self._start_bot(on_ready=lambda success, error="": loading.signal_ready(success, error))
 
-        # 注入 TUI 弹窗授权回调到 bot/session.py
-        # 当新用户连接时，get_chat_session() 会调用此回调弹出 AuthModal
+    def _after_setup(self, _result=None) -> None:
+        """设置完成后：重启进程 → 走正常 loading 流程。"""
+        self.notify("设置完成，正在重启...")
+        self.set_timer(0.5, lambda: asyncio.create_task(self._restart_bot()))
+
+    def _after_loading(self, _result=None) -> None:
+        """Loading 结束：触发动画（bot 已在后台运行）。"""
+        self._start_animations()
+
+    def _start_animations(self) -> None:
+        """header + sidebar + footer 动画。"""
+        self.set_timer(0.01, lambda: (
+            self.query_one("#title-bar").add_class("-visible"),
+            self.query_one(Sidebar).animate(),
+            self._show_footer(),
+        ))
+
+    def _setup_auth(self) -> None:
+        """注入 TUI 弹窗授权回调到 bot/session.py。"""
         from bot.session import set_auth_callback
 
         async def _tui_auth(chat_id: int, chat_name: str, chat_type: str) -> str:
             loop = asyncio.get_event_loop()
             future = loop.create_future()
-
             from tui.widgets.auth_modal import AuthModal
             modal = AuthModal(chat_id, chat_name, chat_type)
             modal.set_future(future)
@@ -226,7 +277,21 @@ class BotTUI(App):
 
         set_auth_callback(_tui_auth)
 
-        self._start_bot()
+    def _show_footer(self) -> None:
+        """shell fade-in → 隐藏壳 → 显示真按钮。"""
+        shell = self.query_one("#bottom-shell")
+        shell.add_class("-visible")
+        self.set_timer(0.03, lambda: shell.add_class("-fade-in"))
+        # fade 完成后替换为真按钮
+        self.set_timer(0.3, self._swap_footer)
+
+    def _swap_footer(self) -> None:
+        """隐藏 shell，显示真按钮。"""
+        try:
+            self.query_one("#bottom-shell").display = False
+        except Exception:
+            pass
+        self.query_one("#bottom-bar").add_class("-visible")
 
     #===================================================================================
     #.       事件处理 — 底部按钮点击
@@ -324,30 +389,32 @@ class BotTUI(App):
     #.       on_unmount()   — TUI 关闭时停止 Bot 并保存历史
     #===================================================================================
 
-    def _start_bot(self) -> None:
+    def _start_bot(self, on_ready=None) -> None:
         #.       创建并启动 Telegram Bot（内部复用 create_application）。
+        #.       on_ready(success, error) — 启动成功/失败时回调。
         if self._bot_task and not self._bot_task.done():
             return
 
         async def _run():
             try:
-                # 重载 core.config 模块以获取最新配置
                 import core.config as config_mod
                 importlib.reload(config_mod)
-                # -- create_application() 来自 bot/main.py
                 from bot.main import create_application
                 self._application = create_application()
                 await self._application.initialize()
                 await self._application.start()
                 await self._application.updater.start_polling()
                 logger.info("Bot started")
-                # 保持运行，直到被取消
+                if on_ready:
+                    on_ready(True, "")
                 while True:
                     await asyncio.sleep(1)
             except asyncio.CancelledError:
                 pass
             except Exception as e:
                 logger.exception(f"Bot start failed: {e}")
+                if on_ready:
+                    on_ready(False, str(e))
 
         self._bot_task = asyncio.create_task(_run())
 

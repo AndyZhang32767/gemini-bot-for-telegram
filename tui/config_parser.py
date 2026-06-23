@@ -55,7 +55,7 @@ def _is_section_sep(line: str) -> bool:
 #=============================================================
 #.       只读变量集合 — 这些变量显示在弹窗中但不可修改
 #=============================================================
-_READONLY_VARS = {"VERSION"}
+_READONLY_VARS = {"VERSION", "SETUP"}
 
 
 #=======================================================================================
@@ -259,7 +259,7 @@ def write_config(filepath: str, sections: list[Section]) -> None:
                     val = var.value.strip()
                     expr_vars = {"SESSION_FILE"}   # 表达式变量，不加引号
                     str_vars = {"TELEGRAM_TOKEN", "GEMINI_API_KEY", "MODEL_TYPE",
-                                "CUSTOM_SEARCH_API", "PROXY_URL"}
+                                "PROXY_URL"}
 
                     if name in expr_vars or ("(" in val and ")" in val):
                         result.append(f'{indent}{name} = {val}\n')

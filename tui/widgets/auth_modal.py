@@ -71,7 +71,7 @@ class AuthModal(ModalScreen):
     #.       构建弹窗界面：标题 + 用户信息 + 三个按钮
     #=========================================================
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="auth-dialog"):
+        with VerticalScroll(id="auth-dialog", classes="modal-off"):
             yield Static("新用户请求接入", id="auth-title")
             yield Static(
                 f"ID: {self._chat_id}\n"

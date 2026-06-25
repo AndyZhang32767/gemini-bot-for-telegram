@@ -3,7 +3,7 @@
 #.       access: pr
 #.       title: 窗口管理
 #.       description: 获取活动窗口列表、截图并用视觉模型分析。capture_window(window_name, question) 根据用户问题分析截图，question 传入具体问题
-#.       version: 2.0
+#.       version: 3.0
 #.       sidebar: window_manager=窗口管理
 #==END TOOL===================================================================
 
@@ -52,6 +52,25 @@ def list_windows() -> str:
         return "当前活动窗口：\n" + "\n".join(numbered)
     except Exception as e:
         return f"获取窗口列表失败: {e}"
+
+
+def capture_fullscreen() -> str:
+    """截取全屏并保存到本地。
+
+    截取整个屏幕（所有显示器），保存到项目根目录 fullscreen_screenshot.png。
+    """
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    save_path = os.path.join(project_dir, "fullscreen_screenshot.png")
+
+    subprocess.run(
+        ["screencapture", "-x", save_path],
+        capture_output=True, timeout=10
+    )
+    if not os.path.exists(save_path) or os.path.getsize(save_path) == 0:
+        return "全屏截图失败。"
+
+    kb = os.path.getsize(save_path) / 1024
+    return f"全屏截图已保存: {save_path} ({kb:.0f} KB)"
 
 
 def capture_window(window_name: str, question: str = "") -> str:

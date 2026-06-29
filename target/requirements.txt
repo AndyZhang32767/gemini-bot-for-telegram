@@ -1,8 +1,0 @@
-python-telegram-bot>=20.0
-google-genai>=1.0.0
-textual>=0.52.0
-pytz
-ddgs
-certifi
-pyfiglet
-qbittorrent-api>=2024.10.22

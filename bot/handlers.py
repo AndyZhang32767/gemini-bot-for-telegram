@@ -60,7 +60,7 @@ _pattern = re.compile(r'^@\w+bot\s*(.*)', re.DOTALL)
 #.       发送随机欢迎语。适用于任何用户。
 #=============================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    reply = random.choice(["お帰り！"])
+    reply = random.choice(["请稍后"])
     logger.info(f"/start 来自 chat_id={update.effective_chat.id}")
     await update.message.reply_text(reply)
 
